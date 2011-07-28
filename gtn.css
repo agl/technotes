@@ -3,6 +3,9 @@ body {
   max-width: 80em;
   background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAAECAYAAABhlOHEAAAABHNCSVQICAgIfAhkiAAAAAlwSFlzAAAE4QAABOEBg16Q4QAAABl0RVh0U29mdHdhcmUAd3d3Lmlua3NjYXBlLm9yZ5vuPBoAAABrSURBVFiFY+QL/vKfYQiA8Pvz7jSdy1MZaHcQA/hniN5gkmLRGGh3EAIff/ExqC4/O9DOIAr8VOm88Utp8qAPUwYGBoZLJR/viHz+PyTSKtNAO2AUjIJRMHBgtAAYBaNgBIPRAmAUjIIRDABFUBXu7gkhAQAAAABJRU5ErkJggg==");
   background-size: 80em 6px;
+  -webkit-background-size: 80em 6px;
+  -o-background-size: 80em 6px;
+  -moz-background-size: 80em 6px;
   background-position: 5px 0px;
   margin-left: 5px;
   margin-top: 6px;
@@ -41,4 +44,8 @@ section header {
 
 tt {
   text-decoration: underline;
+}
+
+pre {
+  padding-left: 3em;
 }
