@@ -1,0 +1,140 @@
+<DOCTYPE html>
+
+<html>
+  <head>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8" />
+    <link href="gtn.css" rel="stylesheet" type="text/css" />
+    <title>Google Technical Note - TLS Next Protocol Negotiation</title>
+  </head>
+
+  <body>
+    <div id="front">
+      <div id="name">nextprotoneg</div>
+      <div id="pubdate">July 2011</div>
+      <div id="version">1</div>
+      <div class="author">Adam Langley &lt;agl@google.com&gt;</div>
+    </div>
+
+    <h1>TLS Next Protocol Negotiation</h1>
+
+    <section>
+      <header>Abstract</header>
+
+      <p>
+        This document describes a Transport Layer Security (<a href="http://tools.ietf.org/html/rfc5246">TLS</a>) extension for application layer protocol negotiation. This allows the application layer to negotiate which protocol should be performed over the secure
+        connection.
+      </p>
+    </section>
+
+    <section>
+      <header>Introduction</header>
+
+      <p>
+        The Next Protocol Negotiation extension (NPN) is currently used to negotiate the use of SPDY as an application level protocol on port 443, and to perform SPDY version negotiation. However, it is not SPDY specific in any way.
+      </p>
+
+      <p>
+        When designing SPDY, we were faced with a problem: there are no good options for establishing a clean transport for a new protocol and negotiating its use. Negotiations on port 80 will run afoul of intercepting proxies. Ports other than 80 and 443 are likely to be firewalled without any fast method of detection, and are also unlikely to traverse HTTP proxies with CONNECT. Using port 443 is possible, but will run afoul of MITM proxies and, also, we didn't want to use a round trip for negotiation on top of the round trips for establishing the TLS connection.
+      </p>
+
+      <p>
+        Next Protocol Negotiation allows us to run over port 443, without additional round trips and with fallback in the case of a MITM proxy.
+      </p>
+    </section>
+
+    <section>
+      <header>Next Protocol Negotiation Extension</header>
+
+      <p>
+        A new extension type (<tt>next_protocol_negotiation</tt>) is defined with extension type 13172 and MAY be included by the client in its <tt>ClientHello</tt> message. If, and only if, the server sees this extension in the <tt>ClientHello</tt>, it MAY choose to echo the extension in its <tt>ServerHello</tt>.
+      </p>
+
+      <p>
+        The <tt>extension_data</tt> field of a <tt>next_protocol_negotiation</tt> extension in a <tt>ClientHello</tt> MUST be empty.
+      </p>
+
+      <p>
+        The <tt>extension_data</tt> field of a <tt>next_protocol_negotiation</tt> extension in a <tt>ServerHello</tt> contains an optional list of protocols advertised by the server. Protocols are named by opaque, non-empty byte strings and the list of protocols is serialized as a concatenation of 8-bit, length prefixed byte strings. Implementations MUST ensure that the empty string is not included and no byte strings are truncated.
+      </p>
+
+      <p>
+        A new handshake message type (<tt>NextProtocol</tt>) is defined with type 67.  If, and only if, the server included a <tt>next_protocol_negotiation</tt> extension in its <tt>ServerHello</tt> message, the client MUST send a <tt>NextProtocol</tt> message after its <tt>ChangeCipherSpec</tt> and before its <tt>Finished</tt> message.
+      </p>
+
+      <p>The <tt>NextProtocol</tt> message has the following format:</p>
+
+<pre>struct {
+  opaque selected_protocol&lt;0..255&gt;;
+  opaque padding&lt;0..255&gt;;
+} NextProtocol;</pre>
+
+      <p>
+        The contents of <tt>selected_protocol</tt> are a protocol but need not have been advertised by the server. The length of <tt>padding</tt> should be 32 - ((len(selected_protocol) + 2) % 32). Note that len(selected_protocol) does not include its length prefix.
+      </p>
+
+      <p>
+        Unlike many other TLS extensions, this extension does not establish properties of the session, only of the connection. When session resumption or <a href="http://tools.ietf.org/html/rfc5077">session tickets</a> are used, the previous contents of this extension are irrelevant and only the values in the new handshake messages are considered.
+      </p>
+
+      <p>
+	For the same reasons, after a handshake has been performed for a given connection,
+        renegotiations on the same connection MUST NOT include the <spanx
+        style="verb">next_protocol_negotiation</spanx> extension.
+      </p>
+    </section>
+
+    <section>
+      <header>Protocol selection</header>
+
+      <p>
+        It's expected that a client will have a list of protocols that it supports, in preference order, and will only select a protocol if the server supports it. In that case, the client SHOULD select the first protocol advertised by the server that it also supports. In the event that the client doesn't support any of server's protocols, or the server doesn't advertise any, it SHOULD select the first protocol that it supports.
+      </p>
+
+      <p>
+        There are cases where the client knows that a server supports an unadvertised protocol. In these cases the client should simply select that protocol.
+      </p>
+    </section>
+
+    <section>
+      <header>Design discussion</header>
+
+      <p>
+        NPN is an outlier from TLS in several respects: firstly that it introduces a handshake message between the <tt>ChangeCipherSpec</tt> and <tt>Finished</tt> message, that the handshake message is padded, and that the negotiation isn't done purely with the hello messages. All these aspects of the protocol are intended to prevent middle-ware discrimination based on the negotiated protocol and follow the general principle that anything which can be encrypted, should be encrypted. The server's list of advertised protocols is in the clear as a compromise between performance and robustness.
+      </p>
+    </section>
+
+    <section>
+      <header>Known protocols</header>
+
+      <p>
+        The following protocol byte strings are in use:
+      </p>
+
+      <ul>
+        <li><tt>http/1.1</tt>: <a href="http://tools.ietf.org/html/rfc2616">HTTP/1.1</a></li>
+        <li><tt>spdy/1</tt>: (obsolete) <a href="http://www.chromium.org/spdy/spdy-protocol">SPDY</a> version 1</li>
+        <li><tt>spdy/2</tt>: <a href="http://www.chromium.org/spdy/spdy-protocol">SPDY</a> version 2</li>
+      </ul>
+    </section>
+
+    <section>
+      <header>Implementations</header>
+
+      <p>
+        NPN has been implemented in NSS (<a href="http://src.chromium.org/viewvc/chrome/trunk/src/net/third_party/nss/patches/nextproto.patch?revision=89829&view=markup">patch</a>), TLSLite (<a href="tlslite-npn.patch">patch</a>) and OpenSSL (included in CVS, patches against 1.0.0d available on request).
+      </p>
+
+      <p>
+        A reference implementation server is running on port 443 of <tt>www.google.com</tt>. On the client side, the Chrome web browser enables NPN by default.
+      </p>
+    </section>
+
+    <section>
+      <header>Acknowledgments</header>
+
+      <p>
+        This document benefited specifically from discussions with Wan-Teh Chang and Nagendra Modadugu.
+      </p>
+    </section>
+  </body>
+</html>

@@ -1,0 +1,272 @@
+diff --git a/tlslite/TLSConnection.py b/tlslite/TLSConnection.py
+index d125f8f..0993604 100755
+--- a/tlslite/TLSConnection.py
++++ b/tlslite/TLSConnection.py
+@@ -931,7 +931,8 @@ class TLSConnection(TLSRecordLayer):
+ 
+     def handshakeServer(self, sharedKeyDB=None, verifierDB=None,
+                         certChain=None, privateKey=None, reqCert=False,
+-                        sessionCache=None, settings=None, checker=None):
++                        sessionCache=None, settings=None, checker=None,
++                        nextProtos=None):
+         """Perform a handshake in the role of server.
+ 
+         This function performs an SSL or TLS handshake.  Depending on
+@@ -1006,13 +1007,14 @@ class TLSConnection(TLSRecordLayer):
+         """
+         for result in self.handshakeServerAsync(sharedKeyDB, verifierDB,
+                 certChain, privateKey, reqCert, sessionCache, settings,
+-                checker):
++                checker, nextProtos):
+             pass
+ 
+ 
+     def handshakeServerAsync(self, sharedKeyDB=None, verifierDB=None,
+                              certChain=None, privateKey=None, reqCert=False,
+-                             sessionCache=None, settings=None, checker=None):
++                             sessionCache=None, settings=None, checker=None,
++                             nextProtos=None):
+         """Start a server handshake operation on the TLS connection.
+ 
+         This function returns a generator which behaves similarly to
+@@ -1028,14 +1030,15 @@ class TLSConnection(TLSRecordLayer):
+             sharedKeyDB=sharedKeyDB,
+             verifierDB=verifierDB, certChain=certChain,
+             privateKey=privateKey, reqCert=reqCert,
+-            sessionCache=sessionCache, settings=settings)
++            sessionCache=sessionCache, settings=settings,
++            nextProtos=nextProtos)
+         for result in self._handshakeWrapperAsync(handshaker, checker):
+             yield result
+ 
+ 
+     def _handshakeServerAsyncHelper(self, sharedKeyDB, verifierDB,
+                              certChain, privateKey, reqCert, sessionCache,
+-                             settings):
++                             settings, nextProtos):
+ 
+         self._handshakeStart(client=False)
+ 
+@@ -1240,6 +1243,9 @@ class TLSConnection(TLSRecordLayer):
+         else:
+             sessionID = createByteArraySequence([])
+ 
++        if not clientHello.supports_npn:
++            nextProtos = None
++
+         #If we've selected an SRP suite, exchange keys and calculate
+         #premaster secret:
+         if cipherSuite in CipherSuite.srpSuites + CipherSuite.srpRsaSuites:
+@@ -1336,6 +1342,7 @@ class TLSConnection(TLSRecordLayer):
+             serverHello = ServerHello()
+             serverHello.create(self.version, serverRandom, sessionID,
+                                cipherSuite, certificateType)
++            serverHello.next_protos_advertised = nextProtos
+             msgs.append(serverHello)
+             if cipherSuite in CipherSuite.srpRsaSuites:
+                 certificateMsg = Certificate(certificateType)
+@@ -1377,8 +1384,9 @@ class TLSConnection(TLSRecordLayer):
+             #Send ServerHello, Certificate[, CertificateRequest],
+             #ServerHelloDone
+             msgs = []
+-            msgs.append(ServerHello().create(self.version, serverRandom,
+-                        sessionID, cipherSuite, certificateType))
++            serverHello = ServerHello().create(self.version, serverRandom, sessionID, cipherSuite, certificateType)
++            serverHello.next_protos_advertised = nextProtos
++            msgs.append(serverHello)
+             msgs.append(Certificate(certificateType).create(serverCertChain))
+             if reqCert:
+                 msgs.append(CertificateRequest())
+@@ -1504,7 +1512,7 @@ class TLSConnection(TLSRecordLayer):
+                                settings.cipherImplementations)
+ 
+         #Exchange ChangeCipherSpec and Finished messages
+-        for result in self._getFinished():
++        for result in self._getFinished(expect_next_protocol=nextProtos is not None):
+             yield result
+ 
+         #If we were holding a post-finished error until receiving the client
+diff --git a/tlslite/TLSRecordLayer.py b/tlslite/TLSRecordLayer.py
+index 875ce80..3c21976 100755
+--- a/tlslite/TLSRecordLayer.py
++++ b/tlslite/TLSRecordLayer.py
+@@ -697,6 +697,8 @@ class TLSRecordLayer:
+                                             self.version).parse(p)
+                 elif subType == HandshakeType.finished:
+                     yield Finished(self.version).parse(p)
++                elif subType == HandshakeType.next_protocol:
++                    yield NextProtocol().parse(p)
+                 else:
+                     raise AssertionError()
+ 
+@@ -1050,7 +1052,7 @@ class TLSRecordLayer:
+         for result in self._sendMsg(finished):
+             yield result
+ 
+-    def _getFinished(self):
++    def _getFinished(self, expect_next_protocol=False):
+         #Get and check ChangeCipherSpec
+         for result in self._getMsg(ContentType.change_cipher_spec):
+             if result in (0,1):
+@@ -1065,6 +1067,19 @@ class TLSRecordLayer:
+         #Switch to pending read state
+         self._changeReadState()
+ 
++        if expect_next_protocol:
++            for result in self._getMsg(ContentType.handshake, HandshakeType.next_protocol):
++                if result in (0,1):
++                    yield result
++            if result is None:
++                for result in self._sendError(AlertDescription.unexpected_message,
++                                             "Didn't get NextProtocol message"):
++                    yield result
++
++            self.next_proto = result.next_proto
++        else:
++            self.next_proto = None
++
+         #Calculate verification data
+         verifyData = self._calcFinished(False)
+ 
+diff --git a/tlslite/constants.py b/tlslite/constants.py
+index 8f2d559..428a886 100755
+--- a/tlslite/constants.py
++++ b/tlslite/constants.py
+@@ -16,6 +16,7 @@ class HandshakeType:
+     certificate_verify = 15
+     client_key_exchange = 16
+     finished = 20
++    next_protocol = 67
+ 
+ class ContentType:
+     change_cipher_spec = 20
+diff --git a/tlslite/messages.py b/tlslite/messages.py
+index afccc79..9a91017 100755
+--- a/tlslite/messages.py
++++ b/tlslite/messages.py
+@@ -121,9 +121,11 @@ class ClientHello(HandshakeMsg):
+         self.certificate_types = [CertificateType.x509]
+         self.compression_methods = []   # a list of 8-bit values
+         self.srp_username = None        # a string
++        self.supports_npn = False
+ 
+     def create(self, version, random, session_id, cipher_suites,
+-               certificate_types=None, srp_username=None):
++               certificate_types=None, srp_username=None,
++               supports_npn=False):
+         self.client_version = version
+         self.random = random
+         self.session_id = session_id
+@@ -165,6 +167,8 @@ class ClientHello(HandshakeMsg):
+                         self.srp_username = bytesToString(p.getVarBytes(1))
+                     elif extType == 7:
+                         self.certificate_types = p.getVarList(1, 1)
++                    elif extType == 13172:
++                        self.supports_npn = True
+                     else:
+                         p.getFixBytes(extLength)
+                     soFar += 4 + extLength
+@@ -201,6 +205,12 @@ class ClientHello(HandshakeMsg):
+ 
+         return HandshakeMsg.postWrite(self, w, trial)
+ 
++class BadNextProtos(Exception):
++    def __init__(self, l):
++        self.length = l
++
++    def __str__(self):
++        return 'Cannot encode a list of next protocols because it contains an element with invalid length %d. Element lengths must be 0 < x < 256' % self.length
+ 
+ class ServerHello(HandshakeMsg):
+     def __init__(self):
+@@ -211,6 +221,7 @@ class ServerHello(HandshakeMsg):
+         self.cipher_suite = 0
+         self.certificate_type = CertificateType.x509
+         self.compression_method = 0
++        self.next_protos_advertised = None
+ 
+     def create(self, version, random, session_id, cipher_suite,
+                certificate_type):
+@@ -243,6 +254,16 @@ class ServerHello(HandshakeMsg):
+         p.stopLengthCheck()
+         return self
+ 
++    def __next_protos_encoded(self):
++        a = []
++        for e in self.next_protos_advertised:
++            if len(e) > 255 or len(e) == 0:
++                raise BadNextProtos(len(e))
++            a.append(chr(len(e)))
++            a.append(e)
++
++        return [ord(x) for x in ''.join(a)]
++
+     def write(self, trial=False):
+         w = HandshakeMsg.preWrite(self, HandshakeType.server_hello, trial)
+         w.add(self.server_version[0], 1)
+@@ -257,6 +278,11 @@ class ServerHello(HandshakeMsg):
+                 CertificateType.x509:
+             extLength += 5
+ 
++        encoded_next_protos_advertised = None
++        if self.next_protos_advertised is not None:
++            encoded_next_protos_advertised = self.__next_protos_encoded()
++            extLength += len(encoded_next_protos_advertised)
++
+         if extLength != 0:
+             w.add(extLength, 2)
+ 
+@@ -266,6 +292,11 @@ class ServerHello(HandshakeMsg):
+             w.add(1, 2)
+             w.add(self.certificate_type, 1)
+ 
++        if encoded_next_protos_advertised is not None:
++            w.add(13172, 2)
++            w.add(len(encoded_next_protos_advertised), 2)
++            w.addFixSeq(encoded_next_protos_advertised, 1)
++
+         return HandshakeMsg.postWrite(self, w, trial)
+ 
+ class Certificate(HandshakeMsg):
+@@ -492,6 +523,7 @@ class CertificateVerify(HandshakeMsg):
+         return self
+ 
+     def write(self, trial=False):
++        w.add(self.type,1)
+         w = HandshakeMsg.preWrite(self, HandshakeType.certificate_verify,
+                                   trial)
+         w.addVarSeq(self.signature, 1, 2)
+@@ -517,6 +549,26 @@ class ChangeCipherSpec(Msg):
+         w.add(self.type,1)
+         return Msg.postWrite(self, w, trial)
+ 
++class NextProtocol(Msg):
++    def __init__(self):
++        self.contentType = ContentType.handshake
++        self.next_proto = None
++
++    def create(self, next_proto):
++        self.next_proto = next_proto
++
++    def parse(self, p):
++        p.startLengthCheck(3)
++        self.next_proto = p.getVarBytes(1)
++        _ = p.getVarBytes(1)
++        p.stopLengthCheck()
++        return self
++
++    def write(self, trial=False):
++        w = Msg.preWrite(self, HandshakeMsg.next_protocol, trial)
++        w.addVarSeq(self.next_proto, 1, 1)
++        w.addVarSeq('\x00' * 32, 1, 32 - ((len(self.next_proto) + 2) % 32));
++        return Msg.postWrite(self, w, trial)
+ 
+ class Finished(HandshakeMsg):
+     def __init__(self, version):
+@@ -558,4 +610,4 @@ class ApplicationData(Msg):
+         return self
+ 
+     def write(self):
+-        return self.bytes
+\ No newline at end of file
++        return self.bytes
