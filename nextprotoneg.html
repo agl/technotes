@@ -121,12 +121,23 @@
       <header>Implementations</header>
 
       <p>
-        NPN has been implemented in NSS (<a href="http://src.chromium.org/viewvc/chrome/trunk/src/net/third_party/nss/patches/nextproto.patch?revision=89829&view=markup">patch</a>), TLSLite (<a href="tlslite-npn.patch">patch</a>) and OpenSSL (included in CVS, patches against 1.0.0d available on request).
+        NPN has been implemented in NSS (<a href="http://src.chromium.org/viewvc/chrome/trunk/src/net/third_party/nss/patches/nextproto.patch?revision=89829&view=markup">patch</a>), TLSLite (<a href="tlslite-npn.patch">patch</a>) and OpenSSL (included in CVS, <a href="openssl-1.0.0d-npn.patch">patch</a> against 1.0.0d).
       </p>
 
       <p>
         A reference implementation server is running on port 443 of <tt>www.google.com</tt>. On the client side, the Chrome web browser enables NPN by default.
       </p>
+    </section>
+
+    <section>
+      <header>Magic values</header>
+
+      <p>For easy reference, this note uses the following magic numbers:</p>
+
+      <table>
+        <tr><td>Next protocol negotiation extension number</td><td>13172</td></tr>
+        <tr><td>NextProtocol handshake message number</td><td>67</td></tr>
+      </table>
     </section>
 
     <section>
