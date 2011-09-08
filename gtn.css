@@ -42,6 +42,10 @@ section header {
   font-weight: bold; 
 }
 
+section section header {
+  font-weight: normal;
+}
+
 tt {
   text-decoration: underline;
 }
