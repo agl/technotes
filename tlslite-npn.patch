@@ -1,53 +1,50 @@
-diff --git a/tlslite/TLSConnection.py b/tlslite/TLSConnection.py
-index d125f8f..0993604 100755
---- a/tlslite/TLSConnection.py
-+++ b/tlslite/TLSConnection.py
-@@ -931,7 +931,8 @@ class TLSConnection(TLSRecordLayer):
- 
+diff -ur /agl/chromium/src/third_party/tlslite/tlslite/TLSConnection.py ./TLSConnection.py
+--- /agl/chromium/src/third_party/tlslite/tlslite/TLSConnection.py	2011-11-18 16:15:00.707445214 -0500
++++ ./TLSConnection.py	2011-11-21 18:21:17.497513591 -0500
+@@ -932,7 +932,7 @@
      def handshakeServer(self, sharedKeyDB=None, verifierDB=None,
                          certChain=None, privateKey=None, reqCert=False,
--                        sessionCache=None, settings=None, checker=None):
-+                        sessionCache=None, settings=None, checker=None,
-+                        nextProtos=None):
+                         sessionCache=None, settings=None, checker=None,
+-                        reqCAs=None):
++                        reqCAs=None, nextProtos=None):
          """Perform a handshake in the role of server.
  
          This function performs an SSL or TLS handshake.  Depending on
-@@ -1006,13 +1007,14 @@ class TLSConnection(TLSRecordLayer):
+@@ -1012,14 +1012,14 @@
          """
          for result in self.handshakeServerAsync(sharedKeyDB, verifierDB,
                  certChain, privateKey, reqCert, sessionCache, settings,
--                checker):
-+                checker, nextProtos):
+-                checker, reqCAs):
++                checker, reqCAs, nextProtos):
              pass
  
  
      def handshakeServerAsync(self, sharedKeyDB=None, verifierDB=None,
                               certChain=None, privateKey=None, reqCert=False,
--                             sessionCache=None, settings=None, checker=None):
-+                             sessionCache=None, settings=None, checker=None,
-+                             nextProtos=None):
+                              sessionCache=None, settings=None, checker=None,
+-                             reqCAs=None):
++                             reqCAs=None, nextProtos=None):
          """Start a server handshake operation on the TLS connection.
  
          This function returns a generator which behaves similarly to
-@@ -1028,14 +1030,15 @@ class TLSConnection(TLSRecordLayer):
-             sharedKeyDB=sharedKeyDB,
+@@ -1036,14 +1036,14 @@
              verifierDB=verifierDB, certChain=certChain,
              privateKey=privateKey, reqCert=reqCert,
--            sessionCache=sessionCache, settings=settings)
-+            sessionCache=sessionCache, settings=settings,
-+            nextProtos=nextProtos)
+             sessionCache=sessionCache, settings=settings,
+-            reqCAs=reqCAs)
++            reqCAs=reqCAs, nextProtos=nextProtos)
          for result in self._handshakeWrapperAsync(handshaker, checker):
              yield result
  
  
      def _handshakeServerAsyncHelper(self, sharedKeyDB, verifierDB,
                               certChain, privateKey, reqCert, sessionCache,
--                             settings):
-+                             settings, nextProtos):
+-                             settings, reqCAs):
++                             settings, reqCAs, nextProtos):
  
          self._handshakeStart(client=False)
  
-@@ -1240,6 +1243,9 @@ class TLSConnection(TLSRecordLayer):
+@@ -1250,6 +1250,9 @@
          else:
              sessionID = createByteArraySequence([])
  
@@ -57,7 +54,7 @@ index d125f8f..0993604 100755
          #If we've selected an SRP suite, exchange keys and calculate
          #premaster secret:
          if cipherSuite in CipherSuite.srpSuites + CipherSuite.srpRsaSuites:
-@@ -1336,6 +1342,7 @@ class TLSConnection(TLSRecordLayer):
+@@ -1346,6 +1349,7 @@
              serverHello = ServerHello()
              serverHello.create(self.version, serverRandom, sessionID,
                                 cipherSuite, certificateType)
@@ -65,7 +62,7 @@ index d125f8f..0993604 100755
              msgs.append(serverHello)
              if cipherSuite in CipherSuite.srpRsaSuites:
                  certificateMsg = Certificate(certificateType)
-@@ -1377,8 +1384,9 @@ class TLSConnection(TLSRecordLayer):
+@@ -1387,8 +1391,9 @@
              #Send ServerHello, Certificate[, CertificateRequest],
              #ServerHelloDone
              msgs = []
@@ -75,9 +72,9 @@ index d125f8f..0993604 100755
 +            serverHello.next_protos_advertised = nextProtos
 +            msgs.append(serverHello)
              msgs.append(Certificate(certificateType).create(serverCertChain))
-             if reqCert:
-                 msgs.append(CertificateRequest())
-@@ -1504,7 +1512,7 @@ class TLSConnection(TLSRecordLayer):
+             if reqCert and reqCAs:
+                 msgs.append(CertificateRequest().create([], reqCAs))
+@@ -1516,7 +1521,7 @@
                                 settings.cipherImplementations)
  
          #Exchange ChangeCipherSpec and Finished messages
@@ -86,11 +83,10 @@ index d125f8f..0993604 100755
              yield result
  
          #If we were holding a post-finished error until receiving the client
-diff --git a/tlslite/TLSRecordLayer.py b/tlslite/TLSRecordLayer.py
-index 875ce80..3c21976 100755
---- a/tlslite/TLSRecordLayer.py
-+++ b/tlslite/TLSRecordLayer.py
-@@ -697,6 +697,8 @@ class TLSRecordLayer:
+diff -ur /agl/chromium/src/third_party/tlslite/tlslite/TLSRecordLayer.py ./TLSRecordLayer.py
+--- /agl/chromium/src/third_party/tlslite/tlslite/TLSRecordLayer.py	2011-11-18 16:15:00.707445214 -0500
++++ ./TLSRecordLayer.py	2011-11-21 18:20:17.637500621 -0500
+@@ -714,6 +714,8 @@
                                              self.version).parse(p)
                  elif subType == HandshakeType.finished:
                      yield Finished(self.version).parse(p)
@@ -99,7 +95,7 @@ index 875ce80..3c21976 100755
                  else:
                      raise AssertionError()
  
-@@ -1050,7 +1052,7 @@ class TLSRecordLayer:
+@@ -1067,7 +1069,7 @@
          for result in self._sendMsg(finished):
              yield result
  
@@ -108,7 +104,7 @@ index 875ce80..3c21976 100755
          #Get and check ChangeCipherSpec
          for result in self._getMsg(ContentType.change_cipher_spec):
              if result in (0,1):
-@@ -1065,6 +1067,19 @@ class TLSRecordLayer:
+@@ -1082,6 +1084,19 @@
          #Switch to pending read state
          self._changeReadState()
  
@@ -127,12 +123,10 @@ index 875ce80..3c21976 100755
 +
          #Calculate verification data
          verifyData = self._calcFinished(False)
- 
-diff --git a/tlslite/constants.py b/tlslite/constants.py
-index 8f2d559..428a886 100755
---- a/tlslite/constants.py
-+++ b/tlslite/constants.py
-@@ -16,6 +16,7 @@ class HandshakeType:
+diff -ur /agl/chromium/src/third_party/tlslite/tlslite/constants.py ./constants.py
+--- /agl/chromium/src/third_party/tlslite/tlslite/constants.py	2011-11-18 16:15:00.707445214 -0500
++++ ./constants.py	2011-11-21 18:20:17.637500621 -0500
+@@ -22,6 +22,7 @@
      certificate_verify = 15
      client_key_exchange = 16
      finished = 20
@@ -140,11 +134,10 @@ index 8f2d559..428a886 100755
  
  class ContentType:
      change_cipher_spec = 20
-diff --git a/tlslite/messages.py b/tlslite/messages.py
-index afccc79..9a91017 100755
---- a/tlslite/messages.py
-+++ b/tlslite/messages.py
-@@ -121,9 +121,11 @@ class ClientHello(HandshakeMsg):
+diff -ur /agl/chromium/src/third_party/tlslite/tlslite/messages.py ./messages.py
+--- /agl/chromium/src/third_party/tlslite/tlslite/messages.py	2011-11-18 16:15:00.707445214 -0500
++++ ./messages.py	2011-11-21 18:27:29.447491888 -0500
+@@ -130,9 +130,11 @@
          self.certificate_types = [CertificateType.x509]
          self.compression_methods = []   # a list of 8-bit values
          self.srp_username = None        # a string
@@ -157,7 +150,7 @@ index afccc79..9a91017 100755
          self.client_version = version
          self.random = random
          self.session_id = session_id
-@@ -165,6 +167,8 @@ class ClientHello(HandshakeMsg):
+@@ -174,6 +176,8 @@
                          self.srp_username = bytesToString(p.getVarBytes(1))
                      elif extType == 7:
                          self.certificate_types = p.getVarList(1, 1)
@@ -166,7 +159,7 @@ index afccc79..9a91017 100755
                      else:
                          p.getFixBytes(extLength)
                      soFar += 4 + extLength
-@@ -201,6 +205,12 @@ class ClientHello(HandshakeMsg):
+@@ -210,6 +214,12 @@
  
          return HandshakeMsg.postWrite(self, w, trial)
  
@@ -179,7 +172,7 @@ index afccc79..9a91017 100755
  
  class ServerHello(HandshakeMsg):
      def __init__(self):
-@@ -211,6 +221,7 @@ class ServerHello(HandshakeMsg):
+@@ -220,6 +230,7 @@
          self.cipher_suite = 0
          self.certificate_type = CertificateType.x509
          self.compression_method = 0
@@ -187,7 +180,7 @@ index afccc79..9a91017 100755
  
      def create(self, version, random, session_id, cipher_suite,
                 certificate_type):
-@@ -243,6 +254,16 @@ class ServerHello(HandshakeMsg):
+@@ -252,6 +263,16 @@
          p.stopLengthCheck()
          return self
  
@@ -204,19 +197,20 @@ index afccc79..9a91017 100755
      def write(self, trial=False):
          w = HandshakeMsg.preWrite(self, HandshakeType.server_hello, trial)
          w.add(self.server_version[0], 1)
-@@ -257,6 +278,11 @@ class ServerHello(HandshakeMsg):
+@@ -266,6 +287,12 @@
                  CertificateType.x509:
              extLength += 5
  
 +        encoded_next_protos_advertised = None
 +        if self.next_protos_advertised is not None:
 +            encoded_next_protos_advertised = self.__next_protos_encoded()
++            extLength += 4 # type and length bytes
 +            extLength += len(encoded_next_protos_advertised)
 +
          if extLength != 0:
              w.add(extLength, 2)
  
-@@ -266,6 +292,11 @@ class ServerHello(HandshakeMsg):
+@@ -275,6 +302,11 @@
              w.add(1, 2)
              w.add(self.certificate_type, 1)
  
@@ -228,7 +222,7 @@ index afccc79..9a91017 100755
          return HandshakeMsg.postWrite(self, w, trial)
  
  class Certificate(HandshakeMsg):
-@@ -492,6 +523,7 @@ class CertificateVerify(HandshakeMsg):
+@@ -515,6 +547,7 @@
          return self
  
      def write(self, trial=False):
@@ -236,7 +230,7 @@ index afccc79..9a91017 100755
          w = HandshakeMsg.preWrite(self, HandshakeType.certificate_verify,
                                    trial)
          w.addVarSeq(self.signature, 1, 2)
-@@ -517,6 +549,26 @@ class ChangeCipherSpec(Msg):
+@@ -540,6 +573,26 @@
          w.add(self.type,1)
          return Msg.postWrite(self, w, trial)
  
@@ -263,10 +257,3 @@ index afccc79..9a91017 100755
  
  class Finished(HandshakeMsg):
      def __init__(self, version):
-@@ -558,4 +610,4 @@ class ApplicationData(Msg):
-         return self
- 
-     def write(self):
--        return self.bytes
-\ No newline at end of file
-+        return self.bytes
