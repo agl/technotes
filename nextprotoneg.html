@@ -61,6 +61,39 @@
         A new handshake message type (<tt>NextProtocol</tt>) is defined with type 67.  If, and only if, the server included a <tt>next_protocol_negotiation</tt> extension in its <tt>ServerHello</tt> message, the client MUST send a <tt>NextProtocol</tt> message after its <tt>ChangeCipherSpec</tt> and before its <tt>Finished</tt> message.
       </p>
 
+      <p>Therefore a full handshake with <tt>NextProtocol</tt> has the following flow (contrast with <a href="https://tools.ietf.org/html/rfc5246#section-7.3">RFC 5246, section 7.3</a>):</p>
+
+<pre>Client                                               Server
+
+ClientHello (NP extension)   --------&gt;
+                                                ServerHello (NP extension &amp; list of protocols)
+                                               Certificate*
+                                         ServerKeyExchange*
+                                        CertificateRequest*
+                             &lt;--------      ServerHelloDone
+Certificate*
+ClientKeyExchange
+CertificateVerify*
+[ChangeCipherSpec]
+NextProtocol
+Finished                     --------&gt;
+                                         [ChangeCipherSpec]
+                             &lt;--------             Finished
+Application Data             &lt;-------&gt;     Application Data</pre>
+
+      <p>An abbreviated handshake with <tt>NextProtocol</tt> has the following flow:</p>
+
+<pre>Client                                                Server
+
+ClientHello (NP extension)    --------&gt;
+                                                 ServerHello (NP extension &amp; list of protocols)
+                                          [ChangeCipherSpec]
+                              &lt;--------             Finished
+[ChangeCipherSpec]
+NextProtocol
+Finished                      --------&gt;
+Application Data              &lt;-------&gt;     Application Data</pre>
+
       <p>The <tt>NextProtocol</tt> message has the following format:</p>
 
 <pre>struct {
