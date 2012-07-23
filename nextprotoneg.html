@@ -46,7 +46,7 @@
       <header>Next Protocol Negotiation Extension</header>
 
       <p>
-        A new extension type (<tt>next_protocol_negotiation</tt>) is defined with extension type 13172 and MAY be included by the client in its <tt>ClientHello</tt> message. If, and only if, the server sees this extension in the <tt>ClientHello</tt>, it MAY choose to echo the extension in its <tt>ServerHello</tt>.
+      A new extension type (<tt>next_protocol_negotiation</tt>) is defined with extension type 13172 and MAY be included by the client in its <tt>ClientHello</tt> message if the <tt>ClientHello</tt> also includes a <tt>server_name_indication</tt> extension. If, and only if, the server sees this extension in the <tt>ClientHello</tt>, it MAY choose to echo the extension in its <tt>ServerHello</tt>.
       </p>
 
       <p>
