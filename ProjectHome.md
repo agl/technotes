@@ -1,0 +1,1 @@
+Google technical notes specify protocols, file formats and the like which may be used by Google's open source efforts.
